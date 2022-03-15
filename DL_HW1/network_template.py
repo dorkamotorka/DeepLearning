@@ -1,21 +1,33 @@
 import pandas as pd
+import math
 import numpy as np
 import pickle
 
 class Network(object):
-    def __init__(self, sizes, optimizer="sgd"):
+    def __init__(self, sizes, optimizer="sgd", l2_reg=False):
         # weights connect two layers, each neuron in layer L is connected to every neuron in layer L+1,
         # the weights for that layer of dimensions size(L+1) X size(L)
         # the bias in each layer L is connected to each neuron in L+1, the number of weights necessary for the bias
         # in layer L is therefore size(L+1).
         # The weights are initialized with a He initializer: https://arxiv.org/pdf/1502.01852v1.pdf
+        self.l2_reg = l2_reg
         self.num_layers = len(sizes) # First layer is input layer
         self.weights = [((2/sizes[i-1])**0.5)*np.random.randn(sizes[i], sizes[i-1]) for i in range(1, len(sizes))]
-        self.biases = [np.zeros((x, 1)) for x in sizes[1:]]
+        self.biases = [np.zeros((x, 1)) for x in sizes[1:]] # no biases in the input layer
         self.optimizer = optimizer
         if self.optimizer == "adam":
-            # Implement the buffers necessary for the Adam optimizer.
-            pass
+            self.Vw = [np.zeros((sizes[i], sizes[i-1])) for i in range(1, len(sizes))] 
+            self.Vb = [np.zeros((x, 1)) for x in sizes[1:]]
+            self.Sw = [np.zeros((sizes[i], sizes[i-1])) for i in range(1, len(sizes))]
+            self.Sb = [np.zeros((x, 1)) for x in sizes[1:]]
+            self.dVw = [np.zeros((sizes[i], sizes[i-1])) for i in range(1, len(sizes))] 
+            self.dVb = [np.zeros((x, 1)) for x in sizes[1:]]
+            self.dSw = [np.zeros((sizes[i], sizes[i-1])) for i in range(1, len(sizes))]
+            self.dSb = [np.zeros((x, 1)) for x in sizes[1:]]
+
+        if self.optimizer == "sgdwm":
+            self.Vw = [np.zeros((sizes[i], sizes[i-1])) for i in range(1, len(sizes))] 
+            self.Vb = [np.zeros((x, 1)) for x in sizes[1:]]
 
     def train(self, training_data,training_class, val_data, val_class, epochs, mini_batch_size, eta):
         # training data - numpy array of dimensions [n0 x m], where m is the number of examples in the data and
@@ -29,7 +41,7 @@ class Network(object):
 
         n = training_data.shape[1]
         for j in range(epochs):
-            print("Epoch "+str(j))
+            print("Epoch " + str(j))
             loss_avg = 0.0
             mini_batches = [
                 (training_data[:,k:k + mini_batch_size], training_class[:,k:k+mini_batch_size])
@@ -41,14 +53,13 @@ class Network(object):
             for mini_batch in mini_batches:
                 output, Zs, As = self.forward_pass(mini_batch[0])
                 gw, gb = net.backward_pass(output, mini_batch[1], Zs, As)
-
-                self.update_network(gw, gb, eta_current)
+                self.update_network(gw, gb, eta_current, len(training_data))
 
                 # Implement the learning rate schedule for Task 5
                 eta_current = eta
                 iteration_index += 1
 
-                loss = cross_entropy(mini_batch[1], output)
+                loss = cross_entropy(mini_batch[1], output, self.l2_reg, self.weights, len(training_data))
                 loss_avg += loss
 
             print("Epoch {} complete".format(j))
@@ -73,23 +84,48 @@ class Network(object):
             output_num = np.argmax(output, axis=0)[0]
             tp += int(example_class_num == output_num)
 
-            loss = cross_entropy(example_class, output)
+            loss = cross_entropy(example_class, output, self.l2_reg, self.weights, len(validation_data))
             loss_avg += loss
         print("Validation Loss:" + str(loss_avg / n))
         print("Classification accuracy: "+ str(tp/n))
 
-    def update_network(self, gw, gb, eta):
+    def update_network(self, gw, gb, eta, n, beta=0.9, gama=0.999, E=1e-7, lmbda=0.5):
         # gw - weight gradients - list with elements of the same shape as elements in self.weights
         # gb - bias gradients - list with elements of the same shape as elements in self.biases
         # eta - learning rate
         # SGD
         if self.optimizer == "sgd":
             for i in range(len(self.weights)):
-                self.weights[i] -= eta * gw[i]
-                self.biases[i] = self.biases[i] - eta * gb[i]
+                if self.l2_reg:
+                    #print((1-(eta*lmbda/n)))
+                    #print("---------lambda------------")
+                    self.weights[i] = (1-(eta*lmbda/n))*self.weights[i] - eta * gw[i]
+                    self.biases[i] = self.biases[i] - eta * gb[i]
+                else:
+                    self.weights[i] = self.weights[i] - eta * gw[i]
+                    self.biases[i] = self.biases[i] - eta * gb[i]
+        elif self.optimizer == "sgdwm":
+            for i in range(len(self.weights)):
+                self.Vw[i] = beta*self.Vw[i] + (1 - beta)*gw[i]
+                self.Vb[i] = beta*self.Vb[i] + (1 - beta)*gb[i]
+                self.weights[i] = self.weights[i] - eta * self.Vw[i]
+                self.biases[i] = self.biases[i] - eta * self.Vb[i]
         elif self.optimizer == "adam":
-            ########### Implement the update function for Adam:
-            pass
+            eta = 0.0001
+            # update weights for each layer
+            for i in range(len(self.weights)):
+                dt = 2
+                for t in range(1, dt):
+                    self.Vw[i] = beta*self.Vw[i] + (1 - beta)*gw[i]
+                    self.Sw[i] = gama*self.Sw[i] + (1 - gama)*(gw[i]**2)
+                    self.Vb[i] = beta*self.Vb[i] + (1 - beta)*gb[i]
+                    self.Sb[i] = gama*self.Sb[i] + (1 - gama)*(gb[i]**2)
+                    self.dVw[i] = self.Vw[i]/(1-beta**t)
+                    self.dSw[i] = self.Sw[i]/(1-gama**t)
+                    self.dVb[i] = self.Vb[i]/(1-beta**t)
+                    self.dSb[i] = self.Sb[i]/(1-gama**t)
+                    self.weights[i] = self.weights[i] - (eta / np.subtract(np.sqrt(self.dSw[i]), E))*self.dVw[i]
+                    self.biases[i] = self.biases[i] - (eta / np.subtract(np.sqrt(self.dSb[i]), E))*self.dVb[i]
         else:
             raise ValueError('Unknown optimizer:'+self.optimizer)
 
@@ -120,8 +156,6 @@ class Network(object):
         gw[-1] = np.dot(delta, activations[-2].transpose()) 
 
         for l in range(2, self.num_layers):
-            # L - 1
-            # dC/dw(L-1) = dC/da(L) * da(L)/dz(L) * dz(L)/dw(L-1) 
             delta = np.dot(self.weights[-l+1].transpose(), delta) * sigmoid_prime(Zs[-l])
             gb[-l] = delta
             gw[-l] = np.dot(delta, activations[-l-1].transpose())
@@ -136,12 +170,30 @@ def softmax_dLdZ(output, target):
     # partial derivative of the cross entropy loss w.r.t Z at the last layer
     return output - target
 
-def cross_entropy(y_true, y_pred, epsilon=1e-12):
+def cross_entropy(y_true, y_pred, l2_reg, weights, n, epsilon=1e-12, lmbda=0.5):
     targets = y_true.transpose()
     predictions = y_pred.transpose()
     predictions = np.clip(predictions, epsilon, 1. - epsilon)
     N = predictions.shape[0]
-    ce = -np.sum(targets * np.log(predictions + 1e-9)) / N
+    if l2_reg:
+        '''
+        s = 0
+        for l in weights:
+            for w in l:
+                for v in w:
+                    s += v**2
+        '''
+        ce = -np.sum(targets * np.log(predictions + 1e-9)) / N + lmbda/(2*N) * sum(np.linalg.norm(w)**2 for w in weights)
+        s = 0
+        for w in weights:
+            s += np.linalg.norm(w)**2
+        #print(s)
+    else:
+        ce = -np.sum(targets * np.log(predictions + 1e-9)) / N
+        s = 0
+        for w in weights:
+            s += np.linalg.norm(w)**2
+        #print(s)
     return ce
 
 def sigmoid(z):
@@ -181,6 +233,6 @@ if __name__ == "__main__":
     # number of input attributes from the data, and the last layer has to match the number of output classes
     # The initial settings are not even close to the optimal network architecture, try increasing the number of layers
     # and neurons and see what happens.
-    net = Network([train_data.shape[0],100, 100,10], optimizer="sgd")
+    net = Network([train_data.shape[0],100, 100,10], optimizer="adam", l2_reg=False)
     net.train(train_data,train_class, val_data, val_class, 20, 64, 0.01)
     net.eval_network(test_data, test_class)
