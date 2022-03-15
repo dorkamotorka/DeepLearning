@@ -10,6 +10,7 @@ class Network(object):
         # the bias in each layer L is connected to each neuron in L+1, the number of weights necessary for the bias
         # in layer L is therefore size(L+1).
         # The weights are initialized with a He initializer: https://arxiv.org/pdf/1502.01852v1.pdf
+        self.t = 1
         self.l2_reg = l2_reg
         self.num_layers = len(sizes) # First layer is input layer
         self.weights = [((2/sizes[i-1])**0.5)*np.random.randn(sizes[i], sizes[i-1]) for i in range(1, len(sizes))]
@@ -29,7 +30,7 @@ class Network(object):
             self.Vw = [np.zeros((sizes[i], sizes[i-1])) for i in range(1, len(sizes))] 
             self.Vb = [np.zeros((x, 1)) for x in sizes[1:]]
 
-    def train(self, training_data,training_class, val_data, val_class, epochs, mini_batch_size, eta):
+    def train(self, training_data,training_class, val_data, val_class, epochs, mini_batch_size, eta, lmbda):
         # training data - numpy array of dimensions [n0 x m], where m is the number of examples in the data and
         # n0 is the number of input attributes
         # training_class - numpy array of dimensions [c x m], where c is the number of classes
@@ -53,23 +54,23 @@ class Network(object):
             for mini_batch in mini_batches:
                 output, Zs, As = self.forward_pass(mini_batch[0])
                 gw, gb = net.backward_pass(output, mini_batch[1], Zs, As)
-                self.update_network(gw, gb, eta_current, len(training_data))
+                self.update_network(gw, gb, eta_current, len(mini_batch[0]), lmbda=lmbda)
 
                 # Implement the learning rate schedule for Task 5
                 eta_current = eta
                 iteration_index += 1
 
-                loss = cross_entropy(mini_batch[1], output, self.l2_reg, self.weights, len(training_data))
+                loss = cross_entropy(mini_batch[1], output, self.l2_reg, self.weights, len(training_data), lmbda=lmbda)
                 loss_avg += loss
 
             print("Epoch {} complete".format(j))
             print("Loss:" + str(loss_avg / len(mini_batches)))
             if j % 10 == 0:
-                self.eval_network(val_data, val_class)
+                self.eval_network(val_data, val_class, lmbda)
 
 
 
-    def eval_network(self, validation_data,validation_class):
+    def eval_network(self, validation_data,validation_class, lmbda):
         # validation data - numpy array of dimensions [n0 x m], where m is the number of examples in the data and
         # n0 is the number of input attributes
         # validation_class - numpy array of dimensions [c x m], where c is the number of classes
@@ -84,12 +85,12 @@ class Network(object):
             output_num = np.argmax(output, axis=0)[0]
             tp += int(example_class_num == output_num)
 
-            loss = cross_entropy(example_class, output, self.l2_reg, self.weights, len(validation_data))
+            loss = cross_entropy(example_class, output, self.l2_reg, self.weights, len(validation_data), lmbda=lmbda)
             loss_avg += loss
         print("Validation Loss:" + str(loss_avg / n))
         print("Classification accuracy: "+ str(tp/n))
 
-    def update_network(self, gw, gb, eta, n, beta=0.9, gama=0.999, E=1e-7, lmbda=0.5):
+    def update_network(self, gw, gb, eta, n, beta=0.9, gama=0.999, E=1e-7, lmbda=0.0001):
         # gw - weight gradients - list with elements of the same shape as elements in self.weights
         # gb - bias gradients - list with elements of the same shape as elements in self.biases
         # eta - learning rate
@@ -97,8 +98,6 @@ class Network(object):
         if self.optimizer == "sgd":
             for i in range(len(self.weights)):
                 if self.l2_reg:
-                    #print((1-(eta*lmbda/n)))
-                    #print("---------lambda------------")
                     self.weights[i] = (1-(eta*lmbda/n))*self.weights[i] - eta * gw[i]
                     self.biases[i] = self.biases[i] - eta * gb[i]
                 else:
@@ -114,18 +113,17 @@ class Network(object):
             eta = 0.0001
             # update weights for each layer
             for i in range(len(self.weights)):
-                dt = 2
-                for t in range(1, dt):
-                    self.Vw[i] = beta*self.Vw[i] + (1 - beta)*gw[i]
-                    self.Sw[i] = gama*self.Sw[i] + (1 - gama)*(gw[i]**2)
-                    self.Vb[i] = beta*self.Vb[i] + (1 - beta)*gb[i]
-                    self.Sb[i] = gama*self.Sb[i] + (1 - gama)*(gb[i]**2)
-                    self.dVw[i] = self.Vw[i]/(1-beta**t)
-                    self.dSw[i] = self.Sw[i]/(1-gama**t)
-                    self.dVb[i] = self.Vb[i]/(1-beta**t)
-                    self.dSb[i] = self.Sb[i]/(1-gama**t)
-                    self.weights[i] = self.weights[i] - (eta / np.subtract(np.sqrt(self.dSw[i]), E))*self.dVw[i]
-                    self.biases[i] = self.biases[i] - (eta / np.subtract(np.sqrt(self.dSb[i]), E))*self.dVb[i]
+                self.Vw[i] = beta*self.Vw[i] + (1 - beta)*gw[i]
+                self.Sw[i] = gama*self.Sw[i] + (1 - gama)*(gw[i]**2)
+                self.Vb[i] = beta*self.Vb[i] + (1 - beta)*gb[i]
+                self.Sb[i] = gama*self.Sb[i] + (1 - gama)*(gb[i]**2)
+                self.dVw[i] = self.Vw[i]/(1-beta**self.t)
+                self.dSw[i] = self.Sw[i]/(1-gama**self.t)
+                self.dVb[i] = self.Vb[i]/(1-beta**self.t)
+                self.dSb[i] = self.Sb[i]/(1-gama**self.t)
+                self.weights[i] = self.weights[i] - (eta / np.subtract(np.sqrt(self.dSw[i]), E))*self.dVw[i]
+                self.biases[i] = self.biases[i] - (eta / np.subtract(np.sqrt(self.dSb[i]), E))*self.dVb[i]
+            self.t += 1
         else:
             raise ValueError('Unknown optimizer:'+self.optimizer)
 
@@ -151,13 +149,13 @@ class Network(object):
         gw = [np.zeros(w.shape) for w in self.weights]
 
         # last layer softmax activation
-        delta = softmax_dLdZ(output, target)
+        delta = softmax_dLdZ(output, target) / len(target)
         gb[-1] = delta
         gw[-1] = np.dot(delta, activations[-2].transpose()) 
 
         for l in range(2, self.num_layers):
-            delta = np.dot(self.weights[-l+1].transpose(), delta) * sigmoid_prime(Zs[-l])
-            gb[-l] = delta
+            delta = np.dot(self.weights[-l+1].transpose(), delta) * sigmoid_prime(Zs[-l]) / len(target) # target je enakega size-a kot mini batch 
+            gb[-l] = delta 
             gw[-l] = np.dot(delta, activations[-l-1].transpose())
 
         return gw, gb
@@ -170,7 +168,7 @@ def softmax_dLdZ(output, target):
     # partial derivative of the cross entropy loss w.r.t Z at the last layer
     return output - target
 
-def cross_entropy(y_true, y_pred, l2_reg, weights, n, epsilon=1e-12, lmbda=0.5):
+def cross_entropy(y_true, y_pred, l2_reg, weights, n, epsilon=1e-12, lmbda=0.0001):
     targets = y_true.transpose()
     predictions = y_pred.transpose()
     predictions = np.clip(predictions, epsilon, 1. - epsilon)
@@ -233,6 +231,6 @@ if __name__ == "__main__":
     # number of input attributes from the data, and the last layer has to match the number of output classes
     # The initial settings are not even close to the optimal network architecture, try increasing the number of layers
     # and neurons and see what happens.
-    net = Network([train_data.shape[0],100, 100,10], optimizer="adam", l2_reg=False)
-    net.train(train_data,train_class, val_data, val_class, 20, 64, 0.01)
-    net.eval_network(test_data, test_class)
+    net = Network([train_data.shape[0],100, 100,10], optimizer="sgd", l2_reg=True)
+    net.train(train_data,train_class, val_data, val_class, 20, 64, 0.5, 0.0001)
+    net.eval_network(test_data, test_class, 0.0001)
