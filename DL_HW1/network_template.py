@@ -57,7 +57,8 @@ class Network(object):
                 self.update_network(gw, gb, eta_current, len(mini_batch[0]), lmbda=lmbda)
 
                 # Implement the learning rate schedule for Task 5
-                eta_current = eta
+                # TODO: Should it be called exery mini-batch or only every epoch?
+                eta_current = exp_learn_rate_decay(eta, j)
                 iteration_index += 1
 
                 loss = cross_entropy(mini_batch[1], output, self.l2_reg, self.weights, len(training_data), lmbda=lmbda)
@@ -160,6 +161,12 @@ class Network(object):
 
         return gw, gb
 
+def exp_learn_rate_decay(eta, t, k=0.0001):
+    '''
+    t: epoch number
+    '''
+    return eta * math.exp(-k*t)
+
 def softmax(Z):
     expZ = np.exp(Z - np.max(Z))
     return expZ / expZ.sum(axis=0, keepdims=True)
@@ -231,6 +238,6 @@ if __name__ == "__main__":
     # number of input attributes from the data, and the last layer has to match the number of output classes
     # The initial settings are not even close to the optimal network architecture, try increasing the number of layers
     # and neurons and see what happens.
-    net = Network([train_data.shape[0],100, 100,10], optimizer="sgd", l2_reg=True)
-    net.train(train_data,train_class, val_data, val_class, 20, 64, 0.5, 0.0001)
+    net = Network([train_data.shape[0],200, 100,10], optimizer="sgd", l2_reg=False)
+    net.train(train_data,train_class, val_data, val_class, 20, 64, 0.5, 0.01)
     net.eval_network(test_data, test_class, 0.0001)
