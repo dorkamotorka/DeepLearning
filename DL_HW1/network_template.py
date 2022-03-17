@@ -26,10 +26,6 @@ class Network(object):
             self.dSw = [np.zeros((sizes[i], sizes[i-1])) for i in range(1, len(sizes))]
             self.dSb = [np.zeros((x, 1)) for x in sizes[1:]]
 
-        if self.optimizer == "sgdwm":
-            self.Vw = [np.zeros((sizes[i], sizes[i-1])) for i in range(1, len(sizes))] 
-            self.Vb = [np.zeros((x, 1)) for x in sizes[1:]]
-
     def train(self, training_data,training_class, val_data, val_class, epochs, mini_batch_size, eta, lmbda):
         # training data - numpy array of dimensions [n0 x m], where m is the number of examples in the data and
         # n0 is the number of input attributes
@@ -58,7 +54,7 @@ class Network(object):
 
                 # Implement the learning rate schedule for Task 5
                 # TODO: Should it be called exery mini-batch or only every epoch?
-                eta_current = exp_learn_rate_decay(eta, j)
+                eta_current = exp_learn_rate_decay(eta, iteration_index)
                 iteration_index += 1
 
                 loss = cross_entropy(mini_batch[1], output, self.l2_reg, self.weights, len(training_data), lmbda=lmbda)
@@ -104,14 +100,7 @@ class Network(object):
                 else:
                     self.weights[i] = self.weights[i] - eta * gw[i]
                     self.biases[i] = self.biases[i] - eta * gb[i]
-        elif self.optimizer == "sgdwm":
-            for i in range(len(self.weights)):
-                self.Vw[i] = beta*self.Vw[i] + (1 - beta)*gw[i]
-                self.Vb[i] = beta*self.Vb[i] + (1 - beta)*gb[i]
-                self.weights[i] = self.weights[i] - eta * self.Vw[i]
-                self.biases[i] = self.biases[i] - eta * self.Vb[i]
         elif self.optimizer == "adam":
-            eta = 0.0001
             # update weights for each layer
             for i in range(len(self.weights)):
                 self.Vw[i] = beta*self.Vw[i] + (1 - beta)*gw[i]
@@ -162,9 +151,6 @@ class Network(object):
         return gw, gb
 
 def exp_learn_rate_decay(eta, t, k=0.0001):
-    '''
-    t: epoch number
-    '''
     return eta * math.exp(-k*t)
 
 def softmax(Z):
@@ -181,24 +167,9 @@ def cross_entropy(y_true, y_pred, l2_reg, weights, n, epsilon=1e-12, lmbda=0.000
     predictions = np.clip(predictions, epsilon, 1. - epsilon)
     N = predictions.shape[0]
     if l2_reg:
-        '''
-        s = 0
-        for l in weights:
-            for w in l:
-                for v in w:
-                    s += v**2
-        '''
         ce = -np.sum(targets * np.log(predictions + 1e-9)) / N + lmbda/(2*N) * sum(np.linalg.norm(w)**2 for w in weights)
-        s = 0
-        for w in weights:
-            s += np.linalg.norm(w)**2
-        #print(s)
     else:
         ce = -np.sum(targets * np.log(predictions + 1e-9)) / N
-        s = 0
-        for w in weights:
-            s += np.linalg.norm(w)**2
-        #print(s)
     return ce
 
 def sigmoid(z):
@@ -236,8 +207,7 @@ if __name__ == "__main__":
     train_class = train_class[..., val_size:]
     # The Network takes as input a list of the numbers of neurons at each layer. The first layer has to match the
     # number of input attributes from the data, and the last layer has to match the number of output classes
-    # The initial settings are not even close to the optimal network architecture, try increasing the number of layers
-    # and neurons and see what happens.
-    net = Network([train_data.shape[0],200, 100,10], optimizer="sgd", l2_reg=False)
-    net.train(train_data,train_class, val_data, val_class, 20, 64, 0.5, 0.01)
-    net.eval_network(test_data, test_class, 0.0001)
+    lmbda = 0.0000001
+    net = Network([train_data.shape[0], 250, 150, 10], optimizer="adam", l2_reg=True)
+    net.train(train_data,train_class, val_data, val_class, 20, 64, 0.001, lmbda)
+    net.eval_network(test_data, test_class, lmbda)
