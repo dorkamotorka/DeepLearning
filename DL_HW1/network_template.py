@@ -214,5 +214,5 @@ if __name__ == "__main__":
     lmbda = 0.0001
     eta = 0.0001
     net = Network([train_data.shape[0], 250, 150, 10], optimizer="adam", l2_reg=True)
-    net.train(train_data,train_class, val_data, val_class, 20, 64, eta, lmbda)
+    net.train(train_data,train_class, val_data, val_class, 40, 64, eta, lmbda)
     net.eval_network(test_data, test_class, lmbda)
