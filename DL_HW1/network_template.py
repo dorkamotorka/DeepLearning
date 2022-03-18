@@ -111,8 +111,12 @@ class Network(object):
                 self.dSw[i] = self.Sw[i]/(1-gama**self.t)
                 self.dVb[i] = self.Vb[i]/(1-beta**self.t)
                 self.dSb[i] = self.Sb[i]/(1-gama**self.t)
-                self.weights[i] = self.weights[i] - (eta / np.subtract(np.sqrt(self.dSw[i]), E))*self.dVw[i]
-                self.biases[i] = self.biases[i] - (eta / np.subtract(np.sqrt(self.dSb[i]), E))*self.dVb[i]
+                if self.l2_reg:
+                    self.weights[i] = (1-(eta*lmbda/n))*self.weights[i] - (eta / np.subtract(np.sqrt(self.dSw[i]), E))*self.dVw[i]
+                    self.biases[i] = self.biases[i] - (eta / np.subtract(np.sqrt(self.dSb[i]), E))*self.dVb[i]
+                else:
+                    self.weights[i] = self.weights[i] - (eta / np.subtract(np.sqrt(self.dSw[i]), E))*self.dVw[i]
+                    self.biases[i] = self.biases[i] - (eta / np.subtract(np.sqrt(self.dSb[i]), E))*self.dVb[i]
             self.t += 1
         else:
             raise ValueError('Unknown optimizer:'+self.optimizer)
@@ -150,7 +154,7 @@ class Network(object):
 
         return gw, gb
 
-def exp_learn_rate_decay(eta, t, k=0.0001):
+def exp_learn_rate_decay(eta, t, k=0.00001):
     return eta * math.exp(-k*t)
 
 def softmax(Z):
@@ -207,7 +211,8 @@ if __name__ == "__main__":
     train_class = train_class[..., val_size:]
     # The Network takes as input a list of the numbers of neurons at each layer. The first layer has to match the
     # number of input attributes from the data, and the last layer has to match the number of output classes
-    lmbda = 0.0000001
+    lmbda = 0.0001
+    eta = 0.0001
     net = Network([train_data.shape[0], 250, 150, 10], optimizer="adam", l2_reg=True)
-    net.train(train_data,train_class, val_data, val_class, 20, 64, 0.001, lmbda)
+    net.train(train_data,train_class, val_data, val_class, 20, 64, eta, lmbda)
     net.eval_network(test_data, test_class, lmbda)
