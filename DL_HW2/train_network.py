@@ -8,7 +8,7 @@ import torchvision
 import numpy as np
 import matplotlib.pyplot as plt
 
-batch_size = 32
+batch_size = 64
 # Transforms can also be used for image augmentation - https://pytorch.org/vision/stable/transforms.html
 transform = transforms.Compose([transforms.ToTensor()])
 
@@ -58,6 +58,7 @@ def test_bird_model(net, curr_data_loader, val_test="val"):
 
     print('Accuracy of the network on %s images: %d %%' % (val_test, 100 * correct / total))
     print("Test loss: " + str(running_loss/(total/4)))
+
     return gt_array, pred_array
 
 def train_bird_model(epochs, lr, wd):
@@ -123,7 +124,7 @@ if __name__ == '__main__':
     #net = train_bird_model(10, 0.0003, 0.000015) #
     #net = train_bird_model(10, 0.0004, 0.000015) #
     #net = train_bird_model(20, 0.00015, 0.000015) # 88 (batch_size=64)
-    net = train_bird_model(20, 0.00015, 0.000015) # 
+    net = train_bird_model(20, 0.00015, 0.000015) # 85 
 
     # probaj batch size 32 z 85 in 84mi
     # Povečaj število epoch
