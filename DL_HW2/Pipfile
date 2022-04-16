@@ -12,6 +12,8 @@ matplotlib = "*"
 tqdm = "*"
 numpy = "*"
 opencv-python = "*"
+ipywidgets = "*"
+scikit-learn = "*"
 
 [dev-packages]
 

@@ -10,6 +10,8 @@ from torch import nn
 from torch.utils.data import Dataset
 import glob
 import cv2
+from sklearn.metrics import jaccard_score
+from sklearn.utils.multiclass import type_of_target
 
 class SegmentationDataset(Dataset):
     def __init__(self, train=True):
@@ -49,7 +51,6 @@ testloader = torch.utils.data.DataLoader(testset, batch_size=4,
                                          shuffle=False, num_workers=2)
 
 def train_seg_model():
-    #net = ResNet18FCN()
     net = UNet()
     net.cuda()
 
@@ -57,7 +58,7 @@ def train_seg_model():
     criterion = nn.CrossEntropyLoss()
 
     optimizer = optim.Adam(net.parameters(), lr=0.0001)
-    epochs=2
+    epochs = 2
     for epoch in range(epochs):  # loop over the dataset multiple times
         with tqdm(total=len(trainset), desc =str(epoch)+"/"+str(epochs), miniters=int(50),unit='img') as prog_bar:
           for i, data in enumerate(trainloader, 0):
@@ -72,8 +73,6 @@ def train_seg_model():
 
               # forward + backward + optimize
               outputs = net(inputs)
-              print(outputs.shape)
-              print(labels[:,0,:,:].long().shape)
               loss = criterion(outputs, labels[:,0,:,:].long())
               loss.backward()
               optimizer.step()
@@ -84,66 +83,32 @@ def train_seg_model():
     return net
 
 def test_seg_model(net, curr_data_loader, val_test="val"):
-    criterion = nn.CrossEntropyLoss()
     num_images = len(curr_data_loader.dataset)
-    gt_array = np.zeros(num_images)
-    pred_array = np.zeros(num_images)
-    correct = 0
-    total = 0
-    running_loss = 0.0
     net.eval()
+    lossj = 0
     with torch.no_grad():
-        for i,data in enumerate(curr_data_loader):
-            images, labels = data
+        for i,data in enumerate(testloader, 0):
+            images = data["image"]
+            labels = data["mask"]
             images = images.cuda()
             labels = labels.cuda()
-
             outputs = net(images)
-            loss = criterion(outputs, labels)
-            running_loss += loss.item()
-
             _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-            gt_array[i*labels.size(0):(i+1)*labels.size(0)] = labels.detach().cpu().numpy()
-            pred_array[i*labels.size(0):(i+1)*labels.size(0)] = predicted.detach().cpu().numpy()
 
-    print('Accuracy of the network on %s images: %d %%' % (val_test, 100 * correct / total))
-    print("Test loss: " + str(running_loss/(total/4)))
+            x = labels.detach().cpu().numpy()
+            y = predicted.detach().cpu().numpy()
+            x = x.ravel()
+            y = y.ravel()
 
-    return gt_array, pred_array
+            # Calculate pixel difference
+            lossj += jaccard_score(x, y, average='macro')
+
+    # Average the pixel difference
+    print("Mean IU accuracy: ", 1 - lossj/num_images)
 
 '''
 MAIN FUNCTION
 '''
 if __name__ == '__main__':
     net = train_seg_model()
-    print(test_seg_model(net, testloader))
-
-    gt_array, pred_array = test_bird_model(net, testloader)
-
-    # Displaying random misclassified images
-    fig = plt.figure(figsize=(24, 24))
-    columns = 2
-    rows = 6
-    mistake_indices = np.nonzero(gt_array != pred_array)[0]
-    for i in range(rows):
-        chosen_index = mistake_indices[np.random.randint(len(mistake_indices))]
-        input, label = testset[chosen_index]
-        pred_label = pred_array[chosen_index].astype(np.int32)
-        pred_cls_samples = np.nonzero(gt_array == pred_label)[0]
-        pred_cls_input, _ = testset[pred_cls_samples[np.random.randint(len(pred_cls_samples))]]
-
-        img = input.detach().numpy().transpose((1,2,0))
-        ax = fig.add_subplot(rows, columns, columns*i+1)
-        im_title = "GT: "+trainset.classes[label] + " P: "+trainset.classes[pred_label]
-        ax.set_title(im_title, fontstyle='italic')
-        plt.imshow(img)
-
-        img_sample = pred_cls_input.detach().numpy().transpose((1,2,0))
-        ax = fig.add_subplot(rows, columns, columns*i+2)
-        im_title = "Pred. Cls. Example: "+trainset.classes[pred_label]
-        ax.set_title(im_title, fontstyle='italic')
-        plt.imshow(img_sample)
-
-    plt.show()
+    test_seg_model(net, testloader)
