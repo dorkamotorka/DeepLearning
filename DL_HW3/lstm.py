@@ -128,6 +128,7 @@ class LSTMSimple(nn.Module):
         # torej skupaj 128 predikcij na eno besedilo
         # oz. 256*128 predikcij za 256 batchov
         # mreža pa se uči iz onehot encodingov
+        out = self.proj(out)
 
         return out, (self.h, self.c)
 
